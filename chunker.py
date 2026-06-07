@@ -26,7 +26,7 @@ def chunk_repo(local_dir):
             file_chunks = chunker.chunk(content) # class's object is calling the method of class
             for chunk in file_chunks:
                 chunk["file_path"] = file
-            chunks.extend(file_chunks) # because you want one flat list to store embeddings later in pgvector
+            chunks.extend(file_chunks) # because you want one flat list to store embeddings later in pgvector and file_chunks already returns list of dictionary
     return chunks
         
 class BaseChunker(ABC):
@@ -64,7 +64,7 @@ class PythonChunker(BaseChunker):
                 else:
                     chunk["parent_class"] = None
                 chunks.append(chunk) 
-        return chunks
+        return chunks # list of dictionaries
                                                                                             
 chunker= PythonChunker()
 obj1 = PythonChunker()
