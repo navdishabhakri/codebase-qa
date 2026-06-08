@@ -76,15 +76,16 @@ def reciprocal_rank_fusion(question,chunks, top_k=5, k=60):
     
 def rerank(question, chunks, top_k=5):
     result = reciprocal_rank_fusion(question,chunks, top_k)
-    co = cohere.ClientV2(cohere_key)
-    
+    co = cohere.Client(cohere_key)
+
     response = co.rerank(
-    model="rerank-v3.5", 
-    query=question,
-    documents=[chunk["text"] for chunk in result],
-    top_n = top_k )
-    
-    reranked=[] 
+        model="rerank-v3.5",
+        query=question,
+        documents=[chunk["text"] for chunk in result],
+        top_n=top_k,
+    )
+
+    reranked = []
     for r in response.results:
         reranked.append(result[r.index])
     return reranked
