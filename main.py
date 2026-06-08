@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from chunker import clone_repo, chunk_repo
+from chunker import clone_repo, chunk_repo, PythonChunker
 from embeddings import embed_chunks
 from store import store_chunks
 from search import rerank
@@ -8,6 +8,8 @@ from groq import Groq
 from dotenv import load_dotenv
 import os
 import tree_sitter_python as tspython
+from fastapi import Request
+from database import Chunk, SessionLocal
 
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
@@ -15,6 +17,7 @@ client = Groq(api_key= key ) # create a client
 
 app = FastAPI()
 
+local_dir = None
 
 class Ingest(BaseModel):
     url: str
@@ -26,6 +29,8 @@ class QueryRequest(BaseModel):
     
 @app.post('/ingest')
 def ingest(request:Ingest):
+    global local_dir
+    local_dir = request.local_dir
     clone_repo(request.url , request.local_dir)
     chunks = chunk_repo(request.local_dir)
     embeddings = embed_chunks(chunks)
@@ -51,4 +56,34 @@ def query(request: QueryRequest):
     )
     return chat_completion.choices[0].message.content
 
-    
+@app.post("/webhook")
+async def github_webhook(request: Request):
+    with SessionLocal() as session:
+        payload = await request.json()
+        changed_files=[]
+        for commit in payload["commits"]:
+            for file in commit["modified"] + commit["added"]:
+                if file.endswith(".py"):
+                    changed_files.append(file)
+                    session.query(Chunk).filter(Chunk.file_path == file).delete() # first delete
+                    full_path = os.path.join(local_dir, file)
+                    if os.path.exists(full_path):
+                        with open(full_path, "r") as f:
+                            content = f.read()
+                        chunker = PythonChunker()
+                        file_chunks = chunker.chunk(content)
+                        for chunk in file_chunks:
+                            chunk["file_path"] = full_path
+                        embeddings = embed_chunks(file_chunks)
+                        store_chunks(file_chunks, embeddings)
+        session.commit()
+        return {"message": f"Re-indexed {len(changed_files)} files"}
+
+                        
+                        
+                    
+                    
+                    
+
+            
+        

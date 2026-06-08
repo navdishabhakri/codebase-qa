@@ -26,7 +26,6 @@ def embed_question(question):
         cls_embedding = outputs.last_hidden_state[:, 0, :] #[batch, tokens, 768]. [:, 0, :] means "all batches, first token (CLS), all 768 dimensions".
         return cls_embedding.squeeze().tolist() # squeeze() removes the batch dimension so shape goes from [1, 768] to [768]
 
-
 def vector_search(question, top_k=5):
     with SessionLocal() as session:
         question_embed= embed_question(question)
