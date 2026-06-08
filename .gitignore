@@ -1,1 +1,7 @@
-.env
+.envragas_env/
+ragas_env/
+__pycache__/
+*.pyc
+ragas_env/
+__pycache__/
+*.pyc
