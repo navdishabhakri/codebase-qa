@@ -10,6 +10,7 @@ import os
 import tree_sitter_python as tspython
 from fastapi import Request
 from database import Chunk, SessionLocal
+from fastapi.responses import StreamingResponse
 
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
@@ -37,24 +38,30 @@ def ingest(request:Ingest):
     store_chunks(chunks,embeddings)
     return {"message": f"Ingested {len(chunks)} chunks successfully"}
     
-
 @app.post("/query")  
 def query(request: QueryRequest):
     chunks = chunk_repo(request.local_dir)
     results = rerank(request.question,chunks)
-    chat_completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile", 
-        messages=[
-            {
-                "role": "user",
-                "content": f"""Use the following context to answer the question.
-                Context :
-                {[r["text"] for r in results]}
-                Question :{request.question} """
-            },
-        ],
-    )
-    return chat_completion.choices[0].message.content
+    
+    def generate():
+        stream = client.chat.completions.create(
+            model="llama-3.3-70b-versatile", 
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""Use the following context to answer the question.
+                    Context :
+                    {[r["text"] for r in results]}
+                    Question :{request.question} """
+                },
+            ], stream = True,
+        )
+        for chunk in stream:
+            token = chunk.choices[0].delta.content
+            if token:
+                yield token
+    return StreamingResponse(generate(), media_type="text/plain")
+
 
 @app.post("/webhook")
 async def github_webhook(request: Request):

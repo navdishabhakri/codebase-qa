@@ -24,6 +24,3 @@ def store_chunks(chunks,embeddings):
             session.add(db_chunk)
         session.commit()
         
-chunks=chunk_repo("/Users/apple/Desktop/fastapi")
-embeddings= embed_chunks(chunks) 
-store_chunks(chunks,embeddings)

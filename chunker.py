@@ -67,7 +67,6 @@ class PythonChunker(BaseChunker):
         return chunks # list of dictionaries
                                                                                             
 chunker= PythonChunker()
-obj1 = PythonChunker()
 # print(obj1.chunk("""
 # class Account:
 #     def __init__(self):
@@ -80,8 +79,8 @@ obj1 = PythonChunker()
 #         raise ValueError("balance cannot be negative")
 # """))
 
-clone_repo("https://github.com/tiangolo/fastapi", "/Users/apple/Desktop/fastapi")
-chunks = chunk_repo("/Users/apple/Desktop/fastapi")
-# print(len(chunks))
+# clone_repo("https://github.com/tiangolo/fastapi", "/Users/apple/Desktop/fastapi")
+# chunks = chunk_repo("/Users/apple/Desktop/fastapi")
+# # print(len(chunks))
 
 

@@ -1,8 +1,4 @@
-from transformers import pipeline
-from transformers import AutoTokenizer, AutoModel
-import torch
-tokenizer = AutoTokenizer.from_pretrained("microsoft/codebert-base")
-model = AutoModel.from_pretrained("microsoft/codebert-base")
+from embeddings import _get_model
 from database import engine, SessionLocal, Chunk
 from sqlalchemy import insert, select
 from dotenv import load_dotenv
@@ -13,12 +9,13 @@ from rank_bm25 import BM25Okapi
 import numpy as np
 import cohere 
 import os
+import torch
 load_dotenv()
 
 cohere_key = os.getenv("COHERE")
 
 def embed_question(question):
-
+        tokenizer, model = _get_model()
         inputs = tokenizer(question, return_tensors="pt",truncation=True, max_length=512) # converts text to numbers and return pt meaning pytorch tensors. 
         # 2. Forward pass through the model
         with torch.no_grad(): 
@@ -91,6 +88,3 @@ def rerank(question, chunks, top_k=5):
 
 
 
-results= rerank("how does authentication work?",chunk_repo("/Users/apple/Desktop/fastapi"))
-for r in results:
-    print(r["file_path"], r["start_line"])
