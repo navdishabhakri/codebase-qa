@@ -5,9 +5,10 @@ import time
 from golden_dataset import data
 from chunker import chunk_repo
 from search import rerank
-from groq import Groq
 from dotenv import load_dotenv
 import os
+import ollama
+load_dotenv()
 from datasets import Dataset
 from ragas import evaluate
 from ragas.metrics import (
@@ -17,33 +18,26 @@ from ragas.metrics import (
 )
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from ragas.embeddings import LangchainEmbeddingsWrapper
+from ragas.llms import LangchainLLMWrapper
+from langchain_community.chat_models import ChatOllama
+
+ollama_llm = LangchainLLMWrapper(ChatOllama(model="llama3.2", timeout=300))
 
 embeddings = LangchainEmbeddingsWrapper(
     HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 )
 
-load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_KEY"))
-from ragas.llms import LangchainLLMWrapper
-from langchain_groq import ChatGroq
-
-groq_llm = LangchainLLMWrapper(ChatGroq(
-    model="llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_KEY")
-))
 
 def get_context_and_answers(chunks):
     for d in data:
         chunks = rerank(d["question"], chunks)
         d["contexts"] = [c["text"] for c in chunks]
-        
-        response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": f"Context: {d['contexts']}\nQuestion: {d['question']}"}]
+
+        response = ollama.chat(
+            model="llama3.2",
+            messages=[{"role": "user", "content": f"Context: {d['contexts']}\nQuestion: {d['question']}"}]
         )
-        answer = response.choices[0].message.content
-        d["answer"] = answer
-        time.sleep(7)
+        d["answer"] = response["message"]["content"]
     
 chunks = chunk_repo("/Users/apple/Desktop/fastapi")
 get_context_and_answers(chunks)
@@ -56,8 +50,10 @@ results = evaluate(
         answer_relevancy,
         context_recall,
     ],
-    llm=groq_llm,
-    embeddings=embeddings
+    llm=ollama_llm,
+    embeddings=embeddings,
+    raise_exceptions=False,
+    batch_size=1,
 )
 
 print(results)
