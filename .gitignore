@@ -1,10 +1,5 @@
-.envragas_env/
-ragas_env/
-__pycache__/
-*.pyc
-ragas_env/
-__pycache__/
-*.pyc
-__pycache__/
-*.pyc
 .env
+ragas_env/
+*.pyc
+__pycache__/
+frontend/node_modules/
