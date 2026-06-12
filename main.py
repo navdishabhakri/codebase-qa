@@ -11,6 +11,7 @@ import tree_sitter_python as tspython
 from fastapi import Request
 from database import Chunk, SessionLocal
 from fastapi.responses import StreamingResponse
+from search import get_chunks_from_db
 
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
@@ -26,23 +27,21 @@ class Ingest(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    local_dir: str
+    repo_url:str = None
     
 @app.post('/ingest')
 def ingest(request:Ingest):
     global local_dir
     local_dir = request.local_dir
     clone_repo(request.url , request.local_dir)
-    chunks = chunk_repo(request.local_dir)
+    chunks = chunk_repo(request.local_dir) # since database is empty it should get chunks first and in query it can easily fetch from db
     embeddings = embed_chunks(chunks)
-    store_chunks(chunks,embeddings)
+    store_chunks(chunks,embeddings, repo_url = request.url)
     return {"message": f"Ingested {len(chunks)} chunks successfully"}
     
 @app.post("/query")  
 def query(request: QueryRequest):
-    chunks = chunk_repo(request.local_dir)
-    results = rerank(request.question,chunks)
-    
+    results = rerank(request.question,repo_url= request.repo_url)
     def generate():
         stream = client.chat.completions.create(
             model="llama-3.3-70b-versatile", 
@@ -52,6 +51,7 @@ def query(request: QueryRequest):
                     "content": f"""Use the following context to answer the question.
                     Context :
                     {[r["text"] for r in results]}
+                    {request.repo_url}
                     Question :{request.question} """
                 },
             ], stream = True,

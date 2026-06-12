@@ -18,6 +18,7 @@ class Chunk(Base):
     start_line = Column(Integer,  nullable = False)
     end_line = Column(Integer,  nullable = False)
     type = Column(String(50),  nullable = False)
+    repo_url = Column(String(500), nullable=True)
     parent_class = Column(String(50))
     chunk_text = Column(Text,  nullable = False)
     embedding_vector = Column(Vector(768))

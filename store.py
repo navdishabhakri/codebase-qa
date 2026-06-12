@@ -9,7 +9,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")  # connects to a SQLite file
  
-def store_chunks(chunks,embeddings):
+def store_chunks(chunks,embeddings, repo_url=None):
     with SessionLocal() as session:
         for chunk,embedding in zip(chunks,embeddings):
             db_chunk = Chunk(
@@ -19,7 +19,8 @@ def store_chunks(chunks,embeddings):
                 type=chunk["type"],
                 parent_class=chunk["parent_class"],
                 chunk_text=chunk["text"],
-                embedding_vector=embedding
+                embedding_vector=embedding,
+                repo_url = repo_url,
             )
             session.add(db_chunk)
         session.commit()

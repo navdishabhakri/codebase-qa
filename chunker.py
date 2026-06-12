@@ -374,5 +374,5 @@ rust_chunker = RustChunker()
 ts_chunker = TypeScriptChunker()
 cpp_chunker = CppChunker()
 
-chunks = chunk_repo("/Users/apple/Desktop/fastapi")
-print(len(chunks))
+# chunks = chunk_repo("/Users/apple/Desktop/fastapi")
+# print(len(chunks))

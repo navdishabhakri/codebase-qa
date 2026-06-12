@@ -14,6 +14,15 @@ load_dotenv()
 
 cohere_key = os.getenv("COHERE")
 
+
+def get_chunks_from_db(repo_url=None):
+    with SessionLocal() as session:
+        if repo_url:
+            chunks = session.query(Chunk).filter(Chunk.repo_url == repo_url).all()
+        else:
+            chunks = session.query(Chunk).all()
+        return [{"text": c.chunk_text, "file_path": c.file_path, "start_line": c.start_line} for c in chunks]
+    
 def embed_question(question):
         tokenizer, model = _get_model()
         inputs = tokenizer(question, return_tensors="pt",truncation=True, max_length=512) # converts text to numbers and return pt meaning pytorch tensors. 
@@ -23,13 +32,17 @@ def embed_question(question):
         cls_embedding = outputs.last_hidden_state[:, 0, :] #[batch, tokens, 768]. [:, 0, :] means "all batches, first token (CLS), all 768 dimensions".
         return cls_embedding.squeeze().tolist() # squeeze() removes the batch dimension so shape goes from [1, 768] to [768]
 
-def vector_search(question, top_k=5):
+def vector_search(question, top_k=5, repo_url = None):
     with SessionLocal() as session:
         question_embed= embed_question(question)
-        stmt = (select(Chunk) .order_by(Chunk.embedding_vector.cosine_distance(question_embed)) .limit(top_k))
+        stmt = (select(Chunk) .order_by(Chunk.embedding_vector.cosine_distance(question_embed)) .limit(top_k)) # less distance more similar
+        
+        if repo_url:
+            stmt = (select(Chunk).where(Chunk.repo_url == repo_url) .order_by(Chunk.embedding_vector.cosine_distance(question_embed)) .limit(top_k)) # less distance more similar
+        
         result = session.scalars(stmt).all()
         return result #returns a list of Chunk SQLAlchemy objects
-
+    
 # you cannot do bm25 in SQL
 def bm25_search(question,chunks,top_k=5):
     
@@ -42,9 +55,10 @@ def bm25_search(question,chunks,top_k=5):
     return [chunks[i] for i in top_indices] #  a list of chunk dicts
 
     
-def reciprocal_rank_fusion(question,chunks, top_k=5, k=60):
+def reciprocal_rank_fusion(question, top_k=5, k=60, repo_url =None):
+    chunks = get_chunks_from_db(repo_url=repo_url)
     bm25_results = bm25_search(question, chunks, top_k)
-    vector_results = vector_search(question, top_k)
+    vector_results = vector_search(question, top_k, repo_url=repo_url)
     scores={}
     
     for rank, chunk in enumerate(bm25_results, start = 1): # to make rank start at 1 
@@ -70,8 +84,8 @@ def reciprocal_rank_fusion(question,chunks, top_k=5, k=60):
     
     return [key_to_chunk[k] for k in sorted_keys if k in key_to_chunk]
     
-def rerank(question, chunks, top_k=5):
-    result = reciprocal_rank_fusion(question,chunks, top_k)
+def rerank(question, top_k=5, repo_url = None):
+    result = reciprocal_rank_fusion(question, top_k, repo_url = repo_url)
     co = cohere.Client(cohere_key)
 
     response = co.rerank(
