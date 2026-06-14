@@ -41,21 +41,22 @@ def ingest(request:Ingest):
     
 @app.post("/query")  
 def query(request: QueryRequest):
-    results = rerank(request.question,repo_url= request.repo_url)
+    results = search_with_expansion(request.question, repo_url = request.repo_url)
     def generate():
         stream = client.chat.completions.create(
             model="llama-3.3-70b-versatile", 
             messages=[
                 {
+                    "role": "system",
+                    "content": "You are a codebase assistant. Only answer using the provided code context. If the context doesn't contain relevant information, say 'I cannot find relevant information in the codebase.' Do not use external knowledge." 
+                }, #  instructions to the LLM about how to behave
+                {
                     "role": "user",
-                    "content": f"""Use the following context to answer the question.
-                    Context :
-                    {[r["text"] for r in results]}
-                    {request.repo_url}
-                    Question :{request.question} """
-                },
+                    "content": f"""Context: {[r["text"] for r in results]}\nQuestion: {request.question}"""
+                }
             ], stream = True,
-        )
+            temperature = 0.1
+        ) 
         for chunk in stream:
             token = chunk.choices[0].delta.content
             if token:
@@ -86,9 +87,29 @@ async def github_webhook(request: Request):
         session.commit()
         return {"message": f"Re-indexed {len(changed_files)} files"}
 
+def expand_query(question): 
+    chat_completion = client.chat.completions.create( model="llama-3.3-70b-versatile",
+        messages=[{
+            "role": "user", 
+            "content": f"Generate 3 short search queries related to this question about code: '{question}'. Return only the queries separated by newlines, no explanations."
+        }])
+    expanded= chat_completion.choices[0].message.content.strip().split("\n")
+    return [question] + expanded
                         
-                        
-                    
+def search_with_expansion(question, repo_url = None, top_k=5):
+    queries = expand_query(question)
+    all_results=[]
+    seen=set()
+    for q in queries:
+        results= rerank(q, repo_url)
+        for r in results:
+            key = r["file_path"] + str(r["start_line"])
+            if key not in seen:
+                all_results.append(r)
+                seen.add(key)
+    return all_results
+        
+                           
                     
                     
 

@@ -85,7 +85,7 @@ def reciprocal_rank_fusion(question, top_k=5, k=60, repo_url =None):
     return [key_to_chunk[k] for k in sorted_keys if k in key_to_chunk]
     
 def rerank(question, top_k=5, repo_url = None):
-    result = reciprocal_rank_fusion(question, top_k, repo_url = repo_url)
+    result = reciprocal_rank_fusion(question, top_k, repo_url = repo_url) # returns array
     co = cohere.Client(cohere_key)
 
     response = co.rerank(
@@ -95,10 +95,12 @@ def rerank(question, top_k=5, repo_url = None):
         top_n=top_k,
     )
 
+    # Build the final reranked list using the indices returned by Cohere's rerank API.
+    # response.results is a list of objects that include the original index of each
+    # document in the provided `documents` list. We use that index to pick the
+    # corresponding chunk from `result` and preserve the new ranking order.
     reranked = []
-    for r in response.results:
+    for r in response.results: 
         reranked.append(result[r.index])
     return reranked
-
-
 
