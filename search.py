@@ -75,7 +75,7 @@ def reciprocal_rank_fusion(question, top_k=5, k=60, repo_url =None):
     key_to_chunk={}
     for chunk in bm25_results:
         key = chunk["file_path"] + str(chunk["start_line"])
-        key_to_chunk[key] = chunk
+        key_to_chunk[key] =  chunk # we have two keys so that its unique like auth.py9 and auth.py45 both gets saved
     
     for chunk in vector_results:
         key = chunk.file_path + str(chunk.start_line)
