@@ -10,6 +10,20 @@ from abc import ABC, abstractmethod
 from git import Repo
 import os
 
+FALLBACK_EXTENSIONS = [
+    ".dart", ".swift", ".kt", ".kts",  # mobile
+    ".php", ".rb", ".scala",           # web/backend
+    ".cs", ".vb",                      # .NET
+    ".r", ".m", ".jl",                 # data science
+    ".sh", ".bash", ".zsh",            # shell
+    ".lua", ".pl", ".ex", ".exs",      # other
+    ".zig", ".nim", ".cr",             # emerging
+    ".html", ".css", ".scss",          # frontend
+    ".sql",                            # database
+    ".yaml", ".yml", ".toml",          # config
+    ".json", ".xml",                   # data
+]
+
 def clone_repo(url, local_dir):
     if not os.path.exists(local_dir): # if this directory doesnt exist, then only add the cloned repo here
         cloned_repo = Repo.clone_from(url, local_dir)
@@ -77,6 +91,14 @@ def get_go_files(local_dir):
                 go_files.append(full_path)
     return go_files   
 
+def get_fallback_files(local_dir):
+    fallback_files = []
+    for dirpath, dirnames, filenames in os.walk(local_dir): # os.walk yields a 3-tuple 
+        for filename in filenames:
+            if any(filename.endswith(ext) for ext in FALLBACK_EXTENSIONS):
+                full_path = os.path.join(dirpath, filename)
+                fallback_files.append(full_path)
+    return fallback_files   
           
 def chunk_repo(local_dir):
     python_files= get_python_files(local_dir)
@@ -86,7 +108,8 @@ def chunk_repo(local_dir):
     go_files = get_go_files(local_dir)
     rust_files = get_rust_files(local_dir)
     cpp_files = get_cpp_files(local_dir)
-
+    fallback_files = get_fallback_files(local_dir)
+    
     python_chunks=[]
     javascript_chunks=[]
     cpp_chunks = []
@@ -94,7 +117,7 @@ def chunk_repo(local_dir):
     go_chunks = []
     java_chunks =[]
     rust_chunks =[]
-    
+    fallback_chunks =[]
     
     for file in python_files:
         try:
@@ -172,8 +195,19 @@ def chunk_repo(local_dir):
                 ts_chunks.extend(file_chunks) # because you want one flat list to store embeddings later in pgvector and file_chunks already returns list of dictionary
         except Exception:
             pass
+    
+    for file in fallback_files:
+        try:
+            with open(file,"r") as f: # because file is a path string, not a file object
+                content= f.read()
+                file_chunks = fallback_chunker.chunk(content) # class's object is calling the method of class
+                for chunk in file_chunks:
+                    chunk["file_path"] = file
+                fallback_chunks.extend(file_chunks) # because you want one flat list to store embeddings later in pgvector and file_chunks already returns list of dictionary
+        except Exception:
+            pass
         
-    return python_chunks + javascript_chunks + java_chunks + ts_chunks + go_chunks + rust_chunks
+    return python_chunks + javascript_chunks + java_chunks + ts_chunks + go_chunks + rust_chunks+fallback_chunks
         
 class BaseChunker(ABC):
     @abstractmethod
@@ -294,7 +328,10 @@ class GoChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
-                chunk["parent_class"] = None
+                if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
+                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
+                else:
+                    chunk["parent_class"] = None
                 chunks.append(chunk)
         return chunks
 
@@ -316,7 +353,10 @@ class JavaChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
-                chunk["parent_class"] = None
+                if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
+                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
+                else:
+                    chunk["parent_class"] = None
                 chunks.append(chunk)
         return chunks
 
@@ -338,7 +378,10 @@ class RustChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
-                chunk["parent_class"] = None
+                if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
+                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
+                else:
+                    chunk["parent_class"] = None
                 chunks.append(chunk)
         return chunks
 
@@ -361,10 +404,27 @@ class TypeScriptChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
-                chunk["parent_class"] = None
+                if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
+                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
+                else:
+                    chunk["parent_class"] = None
                 chunks.append(chunk)
         return chunks
-    
+
+class FallbackChunker(BaseChunker):
+    def chunk(self, source_code):
+        chunks=[]
+        lines = source_code.split("\n")
+        for i in range(0,len(lines),50):
+            chunk_lines= lines[i:i+50] # first 50 lines
+            if any (line.strip() for line in chunk_lines): # is any line filled with content
+                chunks.append({"text":"\n".join(chunk_lines),
+                    "start_line": i,
+                    "end_line": min(i+50, len(lines)),
+                    "type": "function",
+                    "parent_class": None})
+        return chunks
+               
                                                                                  
 python_chunker= PythonChunker()
 javascript_chunker = JavaScriptChunker()
@@ -373,6 +433,7 @@ java_chunker = JavaChunker()
 rust_chunker = RustChunker()
 ts_chunker = TypeScriptChunker()
 cpp_chunker = CppChunker()
+fallback_chunker = FallbackChunker()
 
 # chunks = chunk_repo("/Users/apple/Desktop/fastapi")
 # print(len(chunks))
