@@ -27,7 +27,6 @@ embeddings = LangchainEmbeddingsWrapper(
     HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 )
 
-
 def get_context_and_answers(chunks):
     for d in data:
         chunks = rerank(d["question"], chunks)
@@ -46,11 +45,11 @@ eval_dataset = Dataset.from_list(data)
 results = evaluate(
     eval_dataset,
     metrics=[
-        faithfulness,
+        faithfulness, 
         answer_relevancy,
         context_recall,
-    ],
-    llm=ollama_llm,
+    ], 
+    llm=ollama_llm, 
     embeddings=embeddings,
     raise_exceptions=False,
     batch_size=1,

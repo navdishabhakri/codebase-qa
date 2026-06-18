@@ -13,7 +13,7 @@ from database import Chunk, SessionLocal
 from fastapi.responses import StreamingResponse
 from search import get_chunks_from_db
 from debugger import graph 
-
+from reviewer import graph_review 
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
 client = Groq(api_key= key ) # create a client
@@ -23,7 +23,9 @@ app = FastAPI()
 
 local_dir = None
 
-
+class Reviewer(BaseModel):
+    pr_url: str
+    
 class Debugger(BaseModel):
     repo_url: str
     error_msg: str
@@ -52,9 +54,18 @@ def debug(request:Debugger):
         "error_msg": request.error_msg,
         "repo_url": request.repo_url,
         "retry_count":0
-    },config={"configurable": {"thread_id": "1"}}) # config tells  It tells the memory checkpointer which conversation thread this belongs to.
+    },config={"configurable": {"thread_id": "1"}}) # config tells the memory checkpointer which conversation thread this belongs to.
     return {"pr_url": result.get("pr_url"), "validation": result.get("validation_results")}
 
+@app.post('/review')
+def review(request: Reviewer):
+    result = graph_review.invoke({
+        "pr_url" : request.pr_url,
+    },config={"configurable": {"thread_id": "1"}})
+    return {"posted":result.get("posted")}
+    
+    
+    
 @app.post("/query")  
 def query(request: QueryRequest):
     results = search_with_expansion(request.question, repo_url = request.repo_url)

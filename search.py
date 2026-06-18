@@ -32,7 +32,7 @@ def embed_question(question):
         cls_embedding = outputs.last_hidden_state[:, 0, :] #[batch, tokens, 768]. [:, 0, :] means "all batches, first token (CLS), all 768 dimensions".
         return cls_embedding.squeeze().tolist() # squeeze() removes the batch dimension so shape goes from [1, 768] to [768]
 
-def vector_search(question, top_k=5, repo_url = None):
+def vector_search(question, top_k=5, repo_url = None): #finds semantically similar chunks.
     with SessionLocal() as session:
         question_embed= embed_question(question)
         stmt = (select(Chunk) .order_by(Chunk.embedding_vector.cosine_distance(question_embed)) .limit(top_k)) # less distance more similar
@@ -44,7 +44,7 @@ def vector_search(question, top_k=5, repo_url = None):
         return result #returns a list of Chunk SQLAlchemy objects
     
 # you cannot do bm25 in SQL
-def bm25_search(question,chunks,top_k=5):
+def bm25_search(question,chunks,top_k=5): # finds exact keyword matches.
     
     query = [chunk["text"].split() for chunk in chunks] #BM25 needs tokenized text — lists of words, not strings
     bm25 = BM25Okapi(query) #it calculates document frequencies, average document length, IDF for every word. 

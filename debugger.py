@@ -19,7 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 access_token = os.getenv("GITHUB_TOKEN")
 auth = Auth.Token(access_token)
-g = Github(auth=auth)
+g = Github(auth=auth) # github client
 
 class State(TypedDict): # state is a dictionary
     errors: list
@@ -164,8 +164,8 @@ def should_retry(state):
         return "generate_fix"
  
 builder.add_conditional_edges("validate_fix", should_retry) # after validate go to should retry
-builder.add_edge("create_pr", END)
+builder.add_edge("create_pr", END) 
 
 memory = MemorySaver()
-graph = builder.compile(checkpointer = memory)
+graph = builder.compile(checkpointer = memory) 
 display(Image(graph.get_graph().draw_mermaid_png()))
