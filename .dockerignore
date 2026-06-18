@@ -1,0 +1,8 @@
+.venv
+ragas_env
+__pycache__
+*.pyc
+.env
+frontend/node_modules
+/Users/apple/Desktop/fastapi
+/Users/apple/Desktop/express

@@ -64,8 +64,6 @@ def review(request: Reviewer):
     },config={"configurable": {"thread_id": "1"}})
     return {"posted":result.get("posted")}
     
-    
-    
 @app.post("/query")  
 def query(request: QueryRequest):
     results = search_with_expansion(request.question, repo_url = request.repo_url)
