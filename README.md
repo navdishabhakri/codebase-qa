@@ -7,5 +7,5 @@ Production-grade RAG system + autonomous AI agents for codebase understanding an
 * Code review agent — fetches PR diffs, searches related codebase context, posts inline GitHub comments
 * CI/CD integration — GitHub Actions triggers auto-debugging on test failure
 * MCP server — Claude Desktop can query your codebase directly
-* RAGAS evaluation: faithfulness 0.67 · answer relevancy 0.84 · context recall 0.68
+* RAGAS evaluation: faithfulness 0.77 · answer relevancy 0.84 · context recall 0.88
 * Stack: FastAPI · PostgreSQL + pgvector · CodeBERT · LangGraph · Cohere · Groq · PyGithub · Docker · Railway · Supabase
