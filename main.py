@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, BackgroundTasks
 from pydantic import BaseModel
-from chunker import clone_repo, chunk_repo, PythonChunker, python_chunker, javascript_chunker, ts_chunker, go_chunker, java_chunker, rust_chunker, cpp_chunker, fallback_chunker
+from chunker import clone_repo, chunk_repo, PythonChunker, python_chunker, javascript_chunker, ts_chunker, go_chunker, java_chunker, rust_chunker, cpp_chunker, fallback_chunker, ipynb_chunker
 from embeddings import embed_chunks
 from store import store_chunks
 from search import rerank
@@ -17,7 +17,10 @@ from reviewer import graph_review
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
 client = Groq(api_key= key ) # create a client
-SUPPORTED_EXTENSIONS = [".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".rs", ".cpp"]
+SUPPORTED_EXTENSIONS = [".py", ".js", ".jsx",".ts", ".tsx", ".go", ".java", ".rs", ".cpp", ".ipynb"]
+import uuid
+from typing import Dict, Any
+from fastapi import Body
 
 app = FastAPI()
 
@@ -29,6 +32,7 @@ class Reviewer(BaseModel):
 class Debugger(BaseModel):
     repo_url: str
     error_msg: str
+    local_dir:str
     
 class Ingest(BaseModel):
     url: str
@@ -37,6 +41,13 @@ class Ingest(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     repo_url:str = None
+    
+
+def run_review_background(pr_url:str):
+    graph_review.invoke(
+        {"pr_url": pr_url},
+        config={"configurable": {"thread_id": str(uuid.uuid4())}}
+    )
     
 @app.post('/ingest')
 def ingest(request:Ingest):
@@ -53,23 +64,24 @@ def debug(request:Debugger):
     result = graph.invoke({
         "error_msg": request.error_msg,
         "repo_url": request.repo_url,
-        "retry_count":0
-    },config={"configurable": {"thread_id": "1"}}) # config tells the memory checkpointer which conversation thread this belongs to.
+        "retry_count":0,
+        "local_dir": request.local_dir
+    }, config={"configurable": {"thread_id": str(uuid.uuid4())}}) # config tells the memory checkpointer which conversation thread this belongs to.
     return {"pr_url": result.get("pr_url"), "validation": result.get("validation_results")}
 
 @app.post('/review')
 def review(request: Reviewer):
     result = graph_review.invoke({
         "pr_url" : request.pr_url,
-    },config={"configurable": {"thread_id": "1"}})
+    },config={"configurable": {"thread_id": str(uuid.uuid4())}})
     return {"posted":result.get("posted")}
     
 @app.post("/query")  
 def query(request: QueryRequest):
-    results = search_with_expansion(request.question, repo_url = request.repo_url)
+    results = rerank(request.question, repo_url = request.repo_url)
     def generate():
         stream = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", 
+            model="openai/gpt-oss-120b", 
             messages=[
                 {
                     "role": "system",
@@ -89,31 +101,50 @@ def query(request: QueryRequest):
     return StreamingResponse(generate(), media_type="text/plain")
 
 
+
+
 @app.post("/webhook")
-async def github_webhook(request: Request):
-    with SessionLocal() as session:
-        payload = await request.json()
-        changed_files=[]
-        for commit in payload["commits"]:
-            for file in commit["modified"] + commit["added"]:
-                if any(file.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
-                    changed_files.append(file) 
-                    session.query(Chunk).filter(Chunk.file_path == file).delete() # first delete
-                    full_path = os.path.join(local_dir, file)
-                    if os.path.exists(full_path):
-                        with open(full_path, "r") as f:
-                            content = f.read()
-                        chunker = get_chunker_for_file(file) 
-                        file_chunks = chunker.chunk(content)
-                        for chunk in file_chunks:
-                            chunk["file_path"] = full_path
-                        embeddings = embed_chunks(file_chunks)
-                        store_chunks(file_chunks, embeddings)
-        session.commit()
-        return {"message": f"Re-indexed {len(changed_files)} files"}
+async def github_webhook(background_tasks: BackgroundTasks, payload: dict = Body(...)):
+    
+    # 1. Trigger Code Review on New/Updated Pull Requests
+    if "pull_request" in payload:
+        action = payload.get("action")
+        if action in ["opened", "synchronize"]:
+            pr_url = payload["pull_request"]["html_url"]
+            background_tasks.add_task(run_review_background, pr_url)
+            return {"status": "Review agent triggered", "pr_url": pr_url}
+
+    # 2. Re-index Codebase on Direct Pushes
+    if "commits" in payload:
+        global local_dir
+        if not local_dir:
+            return {"error": "Local directory not set. Please ingest the repo first."}
+            
+        with SessionLocal() as session:
+            changed_files = []
+            for commit in payload.get("commits", []):
+                for file in commit.get("modified", []) + commit.get("added", []):
+                    if any(file.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                        changed_files.append(file) 
+                        full_path = os.path.join(local_dir, file)
+                        session.query(Chunk).filter(Chunk.file_path == full_path).delete() 
+                        
+                        if os.path.exists(full_path):
+                            with open(full_path, "r", encoding="utf-8") as f:
+                                content = f.read()
+                            chunker = get_chunker_for_file(file) 
+                            file_chunks = chunker.chunk(content)
+                            for chunk in file_chunks:
+                                chunk["file_path"] = full_path
+                            embeddings = embed_chunks(file_chunks)
+                            store_chunks(file_chunks, embeddings)
+            session.commit()
+            return {"message": f"Re-indexed {len(changed_files)} files"}
+            
+    return {"status": "Ignored event"}
 
 def expand_query(question): 
-    chat_completion = client.chat.completions.create( model="llama-3.3-70b-versatile",
+    chat_completion = client.chat.completions.create( model="openai/gpt-oss-120b",
         messages=[{
             "role": "user", 
             "content": f"Generate 3 short search queries related to this question about code: '{question}'. Return only the queries separated by newlines, no explanations."
@@ -126,7 +157,7 @@ def search_with_expansion(question, repo_url = None, top_k=5):
     all_results=[]
     seen=set()
     for q in queries:
-        results= rerank(q, repo_url)
+        results= rerank(q, repo_url=repo_url)
         for r in results:
             key = r["file_path"] + str(r["start_line"])
             if key not in seen:
@@ -137,6 +168,8 @@ def search_with_expansion(question, repo_url = None, top_k=5):
 def get_chunker_for_file(file_path):
     if file_path.endswith(".py"):
         return python_chunker
+    elif file_path.endswith(".ipynb"):
+        return ipynb_chunker
     elif file_path.endswith(".js") or file_path.endswith(".jsx"):
         return javascript_chunker
     elif file_path.endswith(".ts") or file_path.endswith(".tsx"):

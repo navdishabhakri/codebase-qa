@@ -10,71 +10,93 @@ from langgraph.checkpoint.memory import MemorySaver
 
 load_dotenv() 
 key= os.getenv("GROQ_KEY") 
-client = Groq(api_key= key ) # create a clie
+client = Groq(api_key= key ) # create a client
 
 class State(TypedDict):
     pr_url: str
-    files: list
     repo_name: str
+    diff_data: list
     chunks: dict
-    difference:dict
     answer : dict
     posted : bool
     
-def receive(state:State):
-    pr_url = state['pr_url']
-    pr_number = int(pr_url.split('/')[-1])
-    repo_name = pr_url.split("github.com/")[1].split("/pull")[0]
-    files = g.get_repo(repo_name).get_pull(pr_number).get_files()
-    return {"files" : files, "repo_name":repo_name} 
-
 def get_diff_and_chunks(state:State):
-    chunks={}
-    difference={}
-    files = state["files"]
-    repo_url =  f"https://github.com/{state['repo_name']}"
+    repo_name = state['pr_url'].split("github.com/")[1].split("/pull")[0]
+    pr_number = int(state['pr_url'].split("/")[-1])
+    repo = g.get_repo(repo_name)
+    pr = repo.get_pull(pr_number)
+    
+    diff_data = []
+    files = pr.get_files()
     for file in files:
-        difference[file.filename] = file.patch
-        query = f"{file.filename} {file.patch[:500]}"
-        chunks[file.filename] = rerank(query, repo_url) # rerank gives you the diff + file 
-    return {"chunks":chunks, "difference":difference}
+        diff_data.append({
+            "filename": file.filename,
+            "patch": file.patch
+        })
+        
+    chunks = {}
+    for item in diff_data:
+        # Pass repo_url as a keyword argument to rerank
+        query = f"Provide context for this file modification: {item['filename']} {item['patch']}"
+        chunks[item['filename']] = rerank(query, repo_url=f"https://github.com/{repo_name}")
+        
+    # Return the clean dictionary of string data, not the PyGithub object
+    return {"diff_data": diff_data, "chunks": chunks, "repo_name": repo_name}
 
 def review(state:State):
-    files = state["files"]
-    difference = state["difference"]
-    chunks=state["chunks"]
+    diff_data = state.get("diff_data") or state.get("diff", [])
+    chunks=state.get("chunks", {})
     answer = {}
-    for file in files:
-        chat_completion = client.chat.completions.create( model="llama-3.3-70b-versatile",
-        messages=[{
-            "role": "user",  
-            "content": f"You are a senior code reviewer. Review this code change in {file.filename}. Diff: {difference[file.filename]}. Related codebase context: {chunks[file.filename]}. Provide specific, actionable review comments. Point out bugs, missing error handling, pattern violations, and improvements. Be concise and direct."
-        }])   
-        answer[file.filename]= chat_completion.choices[0].message.content
-    return {"answer" : answer} # review for all files
-
-def post_comments(state:State):
-    pr_number = int(state['pr_url'].split('/')[-1])
-    pr =  g.get_repo(state['repo_name']).get_pull(pr_number)
-    reviews = state['answer']
-    files = state['files']
-    
-    for file in files:
-        pr.create_issue_comment(
-            f"**Review for {file.filename} : **\n\n {reviews[file.filename]}"
-        )
-    
-    return {"posted" : True}
+    for item in diff_data:
+        filename = item.get('filename')
+        patch = item.get('patch')
+        relevant_chunks = chunks.get(filename, [])
         
+        # Safely parse text from chunks
+        context_text = "\n".join([c.get('text', '') if isinstance(c, dict) else str(c) for c in relevant_chunks]) if relevant_chunks else ""
+        
+        chat_completion = client.chat.completions.create( 
+            model="openai/gpt-oss-120b",
+            messages=[{
+                "role": "user",  
+                "content": f"You are a senior code reviewer. Review this code change in {filename}. Diff: {patch}. Related codebase context: {context_text}. Provide specific, actionable review comments. Point out bugs, missing error handling, pattern violations, and improvements. Be concise and direct."
+            }]
+        )    
+        answer[filename] = chat_completion.choices[0].message.content
+        
+    return {"answer": answer}
+
+def post_comments(state: State):
+    pr_url = state['pr_url']
+    pr_number = int(pr_url.split('/')[-1])
+    
+    # Define repo_name locally so the next line doesn't crash
+    repo_name = pr_url.split("github.com/")[1].split("/pull")[0]
+    pr = g.get_repo(repo_name).get_pull(pr_number)
+    
+    reviews = state.get('answer', {})
+    diff_data = state.get("diff_data") or state.get("diff", [])
+    
+    consolidated_review = "### 🤖 Automated Code Review\n\n"
+    
+    for item in diff_data:
+        filename = item.get('filename')
+        if filename in reviews:
+            consolidated_review += f"#### **`{filename}`**\n{reviews[filename]}\n\n---\n\n"
+            
+    # Post exactly ONE comment containing all the feedback
+    pr.create_issue_comment(consolidated_review)
+    
+    return {"posted": True}
+
    
 builder = StateGraph(State)    
-builder.add_node("receive", receive)
+
 builder.add_node("get_diff_and_chunks",get_diff_and_chunks)
 builder.add_node("review",review)
 builder.add_node("post_comments",post_comments)
 
-builder.add_edge(START, "receive")
-builder.add_edge("receive", "get_diff_and_chunks")
+builder.add_edge(START, "get_diff_and_chunks")
 builder.add_edge("get_diff_and_chunks", "review")
 builder.add_edge("review", "post_comments")
 builder.add_edge("post_comments", END) 

@@ -42,22 +42,34 @@ def vector_search(question, top_k=5, repo_url = None): #finds semantically simil
         
         result = session.scalars(stmt).all()
         return result #returns a list of Chunk SQLAlchemy objects
-    
+
+_bm25_cache={}
 # you cannot do bm25 in SQL
-def bm25_search(question,chunks,top_k=5): # finds exact keyword matches.
-    
-    query = [chunk["text"].split() for chunk in chunks] #BM25 needs tokenized text — lists of words, not strings
-    bm25 = BM25Okapi(query) #it calculates document frequencies, average document length, IDF for every word. 
+def bm25_search(question,chunks,top_k=5,repo_url=None): # finds exact keyword matches.
+    if not chunks:
+        return []
+    cache_key = repo_url if repo_url else "default_repo"
+    if cache_key not in _bm25_cache or _bm25_cache[cache_key]["chunk_count"] != len(chunks):
+        query_corpus = [chunk["text"].split() for chunk in chunks]
+        bm25 = BM25Okapi(query_corpus)
+        _bm25_cache[cache_key] = {
+            "index": bm25,
+            "chunk_count": len(chunks)
+        }
+    # Retrieve the cached index
+    bm25 = _bm25_cache[cache_key]["index"]
 
     tokenized_question = question.split()
-    scores = bm25.get_scores(tokenized_question) #computes a score for every chunk against your question. Returns an array of 5282 numbers.
-    top_indices = np.argsort(scores)[::-1][:top_k] # the 5 highest scoring indices
-    return [chunks[i] for i in top_indices] #  a list of chunk dicts
+    scores = bm25.get_scores(tokenized_question) 
+    top_indices = np.argsort(scores)[::-1][:int(top_k)] 
+    
+    return [chunks[i] for i in top_indices]
+
 
     
 def reciprocal_rank_fusion(question, top_k=5, k=60, repo_url =None):
     chunks = get_chunks_from_db(repo_url=repo_url)
-    bm25_results = bm25_search(question, chunks, top_k)
+    bm25_results = bm25_search(question, chunks, top_k,repo_url=repo_url)
     vector_results = vector_search(question, top_k, repo_url=repo_url)
     scores={}
     
@@ -86,6 +98,8 @@ def reciprocal_rank_fusion(question, top_k=5, k=60, repo_url =None):
     
 def rerank(question, top_k=5, repo_url = None):
     result = reciprocal_rank_fusion(question, top_k, repo_url = repo_url) # returns array
+    if not result:
+        return []
     co = cohere.Client(cohere_key)
 
     response = co.rerank(

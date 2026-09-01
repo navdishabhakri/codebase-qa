@@ -64,6 +64,15 @@ def get_ts_files(local_dir):
                 ts_files.append(full_path)
     return ts_files   
 
+def get_ipynb_files(local_dir):
+    ipynb_files = []
+    for dirpath, dirnames, filenames in os.walk(local_dir): 
+        for filename in filenames:
+            if filename.endswith(".ipynb"):
+                full_path = os.path.join(dirpath, filename)
+                ipynb_files.append(full_path)
+    return ipynb_files
+
 def get_java_files(local_dir):
     java_files = []
     for dirpath, dirnames, filenames in os.walk(local_dir): # os.walk yields a 3-tuple 
@@ -107,12 +116,14 @@ def chunk_repo(local_dir):
     ts_files = get_ts_files(local_dir)
     go_files = get_go_files(local_dir)
     rust_files = get_rust_files(local_dir)
+    ipynb_files = get_ipynb_files(local_dir)
     cpp_files = get_cpp_files(local_dir)
     fallback_files = get_fallback_files(local_dir)
     
     python_chunks=[]
     javascript_chunks=[]
     cpp_chunks = []
+    ipynb_chunks = [] 
     ts_chunks = []
     go_chunks = []
     java_chunks =[]
@@ -121,7 +132,7 @@ def chunk_repo(local_dir):
     
     for file in python_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r",encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = python_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -130,9 +141,20 @@ def chunk_repo(local_dir):
         except Exception:
             pass
         
+    for file in ipynb_files:
+        try:
+            with open(file,"r",encoding="utf-8") as f:
+                content= f.read()
+                file_chunks = ipynb_chunker.chunk(content)
+                for chunk in file_chunks:
+                    chunk["file_path"] = file
+                ipynb_chunks.extend(file_chunks)
+        except Exception:
+            pass
+        
     for file in javascript_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r",encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = javascript_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -143,7 +165,7 @@ def chunk_repo(local_dir):
     
     for file in java_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = java_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -154,7 +176,7 @@ def chunk_repo(local_dir):
     
     for file in cpp_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = cpp_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -165,7 +187,7 @@ def chunk_repo(local_dir):
     
     for file in go_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = go_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -176,7 +198,7 @@ def chunk_repo(local_dir):
     
     for file in rust_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = rust_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -187,7 +209,7 @@ def chunk_repo(local_dir):
     
     for file in ts_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = ts_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -198,7 +220,7 @@ def chunk_repo(local_dir):
     
     for file in fallback_files:
         try:
-            with open(file,"r") as f: # because file is a path string, not a file object
+            with open(file,"r", encoding="utf-8") as f: # because file is a path string, not a file object
                 content= f.read()
                 file_chunks = fallback_chunker.chunk(content) # class's object is calling the method of class
                 for chunk in file_chunks:
@@ -207,12 +229,31 @@ def chunk_repo(local_dir):
         except Exception:
             pass
         
-    return python_chunks + javascript_chunks + java_chunks + ts_chunks + go_chunks + rust_chunks+fallback_chunks
+    return python_chunks + ipynb_chunks + javascript_chunks + java_chunks + ts_chunks + go_chunks + rust_chunks+fallback_chunks
         
 class BaseChunker(ABC):
     @abstractmethod
     def chunk(self,source_code):
         pass
+
+import json
+# ... your existing imports ...
+
+class IPYNBChunker:
+    def chunk(self, content):
+        try:
+            notebook = json.loads(content)
+            python_code = ""
+            for cell in notebook.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    python_code += "".join(cell.get("source", [])) + "\n\n"
+            
+            # Pass the extracted Python code to your existing tree-sitter chunker
+            return python_chunker.chunk(python_code)
+        except Exception as e:
+            print(f"Error parsing notebook: {e}")
+            return []
+
 
 
 class PythonChunker(BaseChunker):
@@ -239,10 +280,11 @@ class PythonChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk) 
         return chunks # list of dictionaries
 
@@ -270,10 +312,11 @@ class JavaScriptChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk) 
         return chunks # list of dictionaries
            
@@ -302,10 +345,11 @@ class CppChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk) 
         return chunks # list of dictionaries
            
@@ -328,10 +372,11 @@ class GoChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk)
         return chunks
 
@@ -353,10 +398,11 @@ class JavaChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk)
         return chunks
 
@@ -378,10 +424,11 @@ class RustChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk)
         return chunks
 
@@ -404,10 +451,11 @@ class TypeScriptChunker(BaseChunker):
                 chunk["start_line"] = node.start_point[0]
                 chunk["end_line"] = node.end_point[0]
                 chunk["type"] = "class" if "class" in name else "function"
+                chunk["parent_class"] = None
                 if node.parent and node.parent.parent and node.parent.parent.type == "class_definition":
-                    chunk["parent_class"] = node.parent.parent.child_by_field_name("name").text.decode("utf8") # first parent is block , then class definition whose child is name and body. you're taking body and then is converted into string
-                else:
-                    chunk["parent_class"] = None
+                    name_node = node.parent.parent.child_by_field_name("name")
+                    if name_node:
+                        chunk["parent_class"] = name_node.text.decode("utf8")
                 chunks.append(chunk)
         return chunks
 
@@ -427,6 +475,7 @@ class FallbackChunker(BaseChunker):
                
                                                                                  
 python_chunker= PythonChunker()
+ipynb_chunker = IPYNBChunker()
 javascript_chunker = JavaScriptChunker()
 go_chunker = GoChunker()
 java_chunker = JavaChunker()

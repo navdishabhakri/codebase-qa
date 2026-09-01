@@ -58,7 +58,7 @@ def query_codebase(question: str, local_dir: str) -> str:
     reranked = [candidates[r.index] for r in response.results]
     context = [r["text"] for r in reranked]
     
-    chat_completion = client.chat.completions.create( model="llama-3.3-70b-versatile",
+    chat_completion = client.chat.completions.create( model="openai/gpt-oss-120b",
         messages=[{
             "role": "user", 
             "content": f"Context: {context}\nQuestion: {question}"
