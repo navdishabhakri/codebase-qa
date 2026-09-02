@@ -111,7 +111,8 @@ with tab3:
                         st.error("AI Reviewer ran into an issue.")
                         
                     st.write("🔄 **Phase 3: Updating system memory...**")
-                    payload = {"action": "opened", "pull_request": {"html_url": pr_url}}
+                    # FIXED: Sending the correct simple payload to your new smart webhook
+                    payload = {"pr_url": pr_url}
                     res_webhook = requests.post(f"{API_BASE_URL}/webhook", json=payload)
                     if res_webhook.status_code == 200:
                         st.success("System successfully learned the new code.")
@@ -137,16 +138,27 @@ with tab4:
             st.json(res.json() if res.status_code == 200 else {"error": "Failed to run reviewer"})
 
 with tab5:
-    st.write("**System Testing (Developer Sandbox)**")
-    st.text("Manually trigger a background system update without opening a real Pull Request.")
-    st.info("💡 **Instruction:** Replace the `html_url` value below with the link to your actual GitHub Pull Request to store the new pieces of code in the database.")
-    
-    payload = st.text_area("System Update Data (JSON format)", value='{\n  "action": "opened",\n  "pull_request": {\n    "html_url": "https://github.com/user/repo/pull/1"\n  }\n}', height=200)
-    
-    if st.button("Run System Test"):
-        try:
-            parsed_payload = json.loads(payload)
-            res = requests.post(f"{API_BASE_URL}/webhook", json=parsed_payload)
-            st.json(res.json() if res.status_code == 200 else {"error": "Test failed"})
-        except json.JSONDecodeError:
-            st.error("Invalid data format.")
+    # FIXED: Properly indented everything inside Tab 5
+    st.header("⚙️ 5. Developer Tools")
+    st.write("Manage the AI's internal memory state.")
+
+    st.subheader("🔄 Smart PR Sync")
+    st.write("Paste a Pull Request link to automatically fetch and memorize the modified files.")
+
+    # Clean, simple user input
+    pr_link = st.text_input("Pull Request URL", placeholder="https://github.com/owner/repo/pull/5", key="webhook_pr")
+
+    if st.button("Sync PR Changes to Memory", use_container_width=True):
+        if not pr_link:
+            st.warning("Please provide a valid GitHub Pull Request link.")
+        else:
+            with st.spinner("Fetching files from GitHub and updating vector database..."):
+                # The only payload Streamlit sends is the URL itself
+                payload = {"pr_url": pr_link}
+                res = requests.post(f"{API_BASE_URL}/webhook", json=payload)
+                
+                if res.status_code == 200:
+                    server_msg = res.json().get("message", "Vector database updated successfully!")
+                    st.success(f"Sync complete! {server_msg}")
+                else:
+                    st.error(f"Failed to sync. Server responded with: {res.status_code}")
