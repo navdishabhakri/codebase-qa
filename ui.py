@@ -139,6 +139,8 @@ with tab4:
 with tab5:
     st.write("**System Testing (Developer Sandbox)**")
     st.text("Manually trigger a background system update without opening a real Pull Request.")
+    st.info("💡 **Instruction:** Replace the `html_url` value below with the link to your actual GitHub Pull Request to store the new pieces of code in the database.")
+    
     payload = st.text_area("System Update Data (JSON format)", value='{\n  "action": "opened",\n  "pull_request": {\n    "html_url": "https://github.com/user/repo/pull/1"\n  }\n}', height=200)
     
     if st.button("Run System Test"):
