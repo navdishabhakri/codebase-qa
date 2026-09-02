@@ -29,3 +29,5 @@ uvicorn==0.34.0
 python-dotenv==1.0.0
 psycopg2-binary
 transformers
+streamlit
+requests
