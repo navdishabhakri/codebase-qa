@@ -8,7 +8,7 @@ _model = None
 
 def _get_model():
     global _tokenizer, _model
-    if _tokenizer is None:
+    if _tokenizer is None or _model is None:
         _tokenizer = AutoTokenizer.from_pretrained("microsoft/codebert-base")
         _model = AutoModel.from_pretrained("microsoft/codebert-base")
     return _tokenizer, _model
